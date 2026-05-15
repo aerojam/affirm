@@ -1,8 +1,7 @@
 import Foundation
 
 enum AppError: Error {
-	case missingFolder
-	case noAffirmationsFound(path: String)
+	case noAffirmationsFound
 }
 
 enum Style {
@@ -10,9 +9,6 @@ enum Style {
 	static let bold = "\u{001B}[1m"
 	static let reset = "\u{001B}[0m"
 }
-
-let fileManager = FileManager.default
-var path = ""
 
 let helpText = """
 \(Style.bold)OVERVIEW:\(Style.reset) Affirm – Ranní dávka disciplíny pro Swift vývojáře.
@@ -28,29 +24,56 @@ let helpText = """
   Každý řádek jedna afirmace.
 """
 
+func getFileUrl() throws -> URL {
+    let fileManager = FileManager.default
+    let appSupport = try fileManager.url(
+        for: .applicationSupportDirectory,
+        in: .userDomainMask,
+        appropriateFor: nil,
+        create: true
+    )
+    return appSupport.appendingPathComponent("Affirm/affirm.txt")
+}
+
+func ensureFileExist(at fileURL: URL) throws {
+    let fileManager = FileManager.default
+    let folderURL = fileURL.deletingLastPathComponent()
+    try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
+    if !fileManager.fileExists(atPath: fileURL.path) {
+        let initialContent = "Napište si svoje afirmace do souboru \(fileURL)\n"
+        let data = initialContent.data(using: .utf8)
+        let success = fileManager.createFile(atPath: fileURL.path, contents: data)
+        if !success {
+            print("Nepodařilo se vytvořit soubor \(fileURL.path)")
+        }
+    }
+}
+
+func loadAffirmations(from url: URL) throws -> [String] {
+    try String(contentsOf: url, encoding: .utf8).components(separatedBy: .newlines).filter { !$0.isEmpty }
+}
+
+func showRandom(from affirmations: [String]) throws {
+    guard let randomAffirm = affirmations.randomElement() else {
+        throw AppError.noAffirmationsFound
+    }
+    print("\(Style.yellow)\(Style.bold)\(randomAffirm)\(Style.reset)")
+}
+
 if CommandLine.arguments.contains("-h") || CommandLine.arguments.contains("--help") {
     print(helpText)
     exit(0)
 }
 
 do {
-    guard let appSupportUrl = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { throw AppError.missingFolder }
-    let myAppFolder = appSupportUrl.appendingPathComponent("Affirm")
-    try fileManager.createDirectory(at: myAppFolder, withIntermediateDirectories: true)
-    path = myAppFolder.appendingPathComponent("affirm.txt").path
-    if !fileManager.fileExists(atPath: path) {
-        let initialContent = "Napište si svoje afirmace do souboru \(path)\n"
-        let data = initialContent.data(using: .utf8)
-        fileManager.createFile(atPath: path, contents: data)
-    }
-    let content = try String(contentsOfFile: path, encoding: .utf8)
-    let affirmations = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
-    guard let randomAffirm = affirmations.randomElement() else { throw AppError.noAffirmationsFound(path: path) }
-    print("\(Style.yellow)\(Style.bold)\(randomAffirm)\(Style.reset)")
-} catch AppError.noAffirmationsFound(let path) {
-    print("Chyba: Soubor s afirmacemi je prázdný. Napište si je sami do \(path).")
-} catch AppError.missingFolder {
-    print("Kritická chyba: Nepodařilo se najít systémovou složku pro data.")
+    let fileURL = try getFileUrl()
+    try ensureFileExist(at: fileURL)
+    let affirmations = try loadAffirmations(from: fileURL)
+    try showRandom(from: affirmations)
+} catch AppError.noAffirmationsFound {
+    print("Chyba: Soubor s afirmacemi je prázdný.")
 } catch {
-    print("Chyba při čtení souboru: \(error.localizedDescription)")
+    print("Něco se nepovedlo: \(error.localizedDescription)")
 }
+
+// Přidat addAffirmation(_: String, to: URL)
